@@ -1,0 +1,109 @@
+plugins {
+    id 'java'
+    id 'jacoco'
+    id 'checkstyle'
+    id 'org.springframework.boot' version '4.1.0'
+}
+
+group = 'com.dxi'
+version = '2.0.0'
+description = 'Reactive reconciliation and data-quality monitoring pipeline'
+
+def selectedJavaVersion = providers.gradleProperty('javaVersion').map { it as int }.orElse(25)
+
+java {
+    toolchain { languageVersion = JavaLanguageVersion.of(selectedJavaVersion.get()) }
+    withSourcesJar()
+    withJavadocJar()
+}
+
+repositories { mavenCentral() }
+
+dependencies {
+    implementation platform(org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES)
+    implementation 'org.springframework.boot:spring-boot-starter-webflux'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-data-r2dbc'
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis-reactive'
+    implementation 'org.springframework.kafka:spring-kafka'
+    implementation 'org.flywaydb:flyway-core'
+    implementation 'org.flywaydb:flyway-database-postgresql'
+    implementation 'io.micrometer:micrometer-registry-prometheus'
+
+    runtimeOnly 'org.postgresql:r2dbc-postgresql'
+    runtimeOnly 'org.postgresql:postgresql'
+
+    compileOnly 'org.projectlombok:lombok:1.18.46'
+    annotationProcessor 'org.projectlombok:lombok:1.18.46'
+    testCompileOnly 'org.projectlombok:lombok:1.18.46'
+    testAnnotationProcessor 'org.projectlombok:lombok:1.18.46'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'io.projectreactor:reactor-test'
+    testImplementation 'org.springframework.kafka:spring-kafka-test'
+    testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+    testImplementation 'org.testcontainers:testcontainers-postgresql'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.compilerArgs += ['-parameters', '-Xlint:all,-processing']
+}
+
+tasks.withType(Test).configureEach {
+    testLogging { events 'failed', 'skipped'; exceptionFormat 'full' }
+}
+
+test {
+    useJUnitPlatform { excludeTags 'integration' }
+    finalizedBy jacocoTestReport
+}
+
+tasks.register('integrationTest', Test) {
+    description = 'Runs Docker-backed integration tests.'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    group = 'verification'
+    useJUnitPlatform { includeTags 'integration' }
+    shouldRunAfter test
+}
+
+jacoco { toolVersion = '0.8.14' }
+
+jacocoTestReport {
+    dependsOn test
+    reports { xml.required = true; html.required = true }
+}
+
+jacocoTestCoverageVerification {
+    dependsOn test
+    violationRules {
+        rule {
+            element = 'CLASS'
+            includes = ['com.dxi.reconciliation.service.*']
+            excludes = [
+                'com.dxi.reconciliation.service.ConflictException',
+                'com.dxi.reconciliation.service.InvalidEventException',
+                'com.dxi.reconciliation.service.JsonCodecException',
+                'com.dxi.reconciliation.service.ResourceNotFoundException'
+            ]
+            limit { counter = 'LINE'; value = 'COVEREDRATIO'; minimum = 0.70 }
+        }
+    }
+}
+
+checkstyle {
+    toolVersion = '13.7.0'
+    configFile = file('config/checkstyle/checkstyle.xml')
+    maxWarnings = 0
+}
+
+javadoc {
+    options.encoding = 'UTF-8'
+    options.charSet = 'UTF-8'
+    options.addBooleanOption('Xdoclint:all,-missing', true)
+}
+
+check.dependsOn jacocoTestCoverageVerification

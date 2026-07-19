@@ -1,0 +1,21 @@
+app:
+  security:
+    api-key: test-api-key
+  reconciliation:
+    schedule-cron: "0 0 0 1 1 *"
+    zone: UTC
+    settlement-delay: PT1H
+    query-timeout: PT30S
+    lock-ttl: PT2H
+    command-redispatch-interval: PT5M
+    maximum-replay-days: 31
+  kafka:
+    source-topic: events
+    replay-command-topic: replay
+    alert-topic: alerts
+    dead-letter-topic: dlt
+    partitions: 1
+    replication-factor: 1
+    admin-timeout: PT10S
+    replay-poll-timeout: PT0.1S
+  alert: {}

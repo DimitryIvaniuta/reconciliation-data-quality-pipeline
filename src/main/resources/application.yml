@@ -1,0 +1,113 @@
+spring:
+  application:
+    name: reconciliation-data-quality-pipeline
+  r2dbc:
+    url: ${SPRING_R2DBC_URL:r2dbc:postgresql://localhost:5435/reconciliation}
+    username: ${SPRING_R2DBC_USERNAME:reconciliation}
+    password: ${SPRING_R2DBC_PASSWORD:reconciliation}
+    pool:
+      enabled: true
+      initial-size: 2
+      max-size: 20
+      max-idle-time: 30m
+      validation-query: SELECT 1
+  flyway:
+    enabled: true
+    url: ${SPRING_FLYWAY_URL:jdbc:postgresql://localhost:5435/reconciliation}
+    user: ${SPRING_FLYWAY_USER:reconciliation}
+    password: ${SPRING_FLYWAY_PASSWORD:reconciliation}
+    locations: classpath:db/migration
+    validate-migration-naming: true
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      password: ${SPRING_DATA_REDIS_PASSWORD:reconciliation}
+      timeout: 2s
+      connect-timeout: 2s
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    admin:
+      fail-fast: true
+    consumer:
+      group-id: reconciliation-projector
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      properties:
+        isolation.level: read_committed
+        max.poll.records: 250
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      retries: 2147483647
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+        delivery.timeout.ms: 120000
+        linger.ms: 5
+        compression.type: zstd
+    listener:
+      ack-mode: record
+      missing-topics-fatal: true
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+  error:
+    include-message: never
+    include-stacktrace: never
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when_authorized
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+app:
+  security:
+    api-key: ${APP_SECURITY_API_KEY}
+  reconciliation:
+    schedule-cron: ${APP_RECONCILIATION_SCHEDULE_CRON:0 15 2 * * *}
+    zone: ${APP_RECONCILIATION_ZONE:UTC}
+    settlement-delay: ${APP_RECONCILIATION_SETTLEMENT_DELAY:PT1H}
+    query-timeout: ${APP_RECONCILIATION_QUERY_TIMEOUT:PT30S}
+    lock-ttl: ${APP_RECONCILIATION_LOCK_TTL:PT2H}
+    command-redispatch-interval: ${APP_RECONCILIATION_REDISPATCH_INTERVAL:PT5M}
+    alert-redispatch-interval: ${APP_RECONCILIATION_ALERT_REDISPATCH_INTERVAL:PT5M}
+    command-recovery-delay: ${APP_RECONCILIATION_RECOVERY_DELAY:PT30S}
+    alert-recovery-delay: ${APP_RECONCILIATION_ALERT_RECOVERY_DELAY:PT30S}
+    replay-stale-timeout: ${APP_RECONCILIATION_REPLAY_STALE_TIMEOUT:PT10M}
+    amount-tolerance: ${APP_RECONCILIATION_AMOUNT_TOLERANCE:0.0001}
+    maximum-replay-days: ${APP_RECONCILIATION_MAXIMUM_REPLAY_DAYS:31}
+    maximum-replay-attempts: ${APP_RECONCILIATION_MAXIMUM_REPLAY_ATTEMPTS:5}
+    replay-checkpoint-interval: ${APP_RECONCILIATION_REPLAY_CHECKPOINT_INTERVAL:100}
+  kafka:
+    source-topic: ${APP_KAFKA_SOURCE_TOPIC:business-events.v1}
+    replay-command-topic: ${APP_KAFKA_REPLAY_COMMAND_TOPIC:reconciliation-replay-commands.v1}
+    alert-topic: ${APP_KAFKA_ALERT_TOPIC:reconciliation-alerts.v1}
+    dead-letter-topic: ${APP_KAFKA_DEAD_LETTER_TOPIC:business-events.v1.dlt}
+    partitions: ${APP_KAFKA_PARTITIONS:3}
+    replication-factor: ${APP_KAFKA_REPLICATION_FACTOR:1}
+    source-retention: ${APP_KAFKA_SOURCE_RETENTION:P45D}
+    admin-timeout: ${APP_KAFKA_ADMIN_TIMEOUT:PT30S}
+    replay-poll-timeout: ${APP_KAFKA_REPLAY_POLL_TIMEOUT:PT1S}
+  alert:
+    webhook-url: ${APP_ALERT_WEBHOOK_URL:}
+
+logging:
+  level:
+    root: INFO
+    com.dxi.reconciliation: INFO
+    org.apache.kafka: WARN
+    io.r2dbc.postgresql.QUERY: WARN

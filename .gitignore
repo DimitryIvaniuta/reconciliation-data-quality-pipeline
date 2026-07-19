@@ -1,0 +1,17 @@
+.gradle/
+build/
+gradle/wrapper/gradle-wrapper.jar
+.idea/
+*.iml
+out/
+.classpath
+.project
+.settings/
+.vscode/
+.env
+*.local.yml
+*.log
+.DS_Store
+Thumbs.db
+__pycache__/
+*.pyc
