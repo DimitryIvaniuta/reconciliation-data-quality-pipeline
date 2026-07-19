@@ -1,0 +1,317 @@
+{
+  "info": {
+    "_postman_id": "a53e7c5f-45f3-4f0a-a0d0-1082f3b97416",
+    "name": "Reconciliation + Data Quality Monitoring Pipeline",
+    "description": "End-to-end local checks for event ingestion, independent compact metrics, immutable offset-backed reconciliation reports, and resumable idempotent replay/backfill.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "key",
+        "value": "X-API-Key",
+        "type": "string"
+      },
+      {
+        "key": "value",
+        "value": "{{apiKey}}",
+        "type": "string"
+      },
+      {
+        "key": "in",
+        "value": "header",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (!pm.environment.get('businessDate')) {",
+          "  const date = new Date();",
+          "  pm.environment.set('businessDate', date.toISOString().slice(0, 10));",
+          "}",
+          "pm.variables.set('correlationId', pm.variables.replaceIn('{{$guid}}'));"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "idempotencyKey",
+      "value": "{{$guid}}"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "url": "{{baseUrl}}/actuator/health"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Publish business event",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Correlation-ID",
+            "value": "{{correlationId}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"eventId\": \"{{$guid}}\",\n  \"businessKey\": \"ORDER-{{$randomInt}}\",\n  \"eventTime\": \"{{$isoTimestamp}}\",\n  \"amount\": 125.50,\n  \"attributes\": {\"channel\": \"POSTMAN\"}\n}"
+        },
+        "url": "{{baseUrl}}/api/v1/events"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Accepted', () => pm.response.to.have.status(202));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Read daily metrics",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/v1/daily-metrics/{{businessDate}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Metrics returned', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Run manual reconciliation",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-Correlation-ID",
+            "value": "{{correlationId}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/v1/reconciliations/{{businessDate}}/runs"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Report created', () => pm.response.to.have.status(201));",
+              "const body = pm.response.json();",
+              "pm.environment.set('reportId', body.reportId);",
+              "pm.test('Actionable status', () => pm.expect(['MATCHED', 'MISMATCH']).to.include(body.status));",
+              "pm.test('Independent evidence is present', () => {",
+              "  pm.expect(body).to.have.property('uniqueEventCount');",
+              "  pm.expect(body).to.have.property('databaseAmount');",
+              "  pm.expect(body).to.have.property('aggregateAmount');",
+              "  pm.expect(body.sourceOffsets).to.be.an('array');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Read reconciliation report",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/v1/reconciliations/{{reportId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Report returned', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Search mismatch reports",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/v1/reconciliations?status=MISMATCH&page=0&size=50"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Search returned', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Request replay dry run",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "dry-{{idempotencyKey}}"
+          },
+          {
+            "key": "X-Requested-By",
+            "value": "postman-user"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"fromDate\":\"{{businessDate}}\",\"toDate\":\"{{businessDate}}\",\"dryRun\":true}"
+        },
+        "url": "{{baseUrl}}/api/v1/replays"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Replay accepted', () => pm.response.to.have.status(202));",
+              "pm.environment.set('replayJobId', pm.response.json().jobId);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Read replay job",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/v1/replays/{{replayJobId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Replay state returned', () => pm.response.to.have.status(200));",
+              "pm.test('Known lifecycle state', () => pm.expect(['REQUESTED','RUNNING','COMPLETED','FAILED']).to.include(pm.response.json().status));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Read replay partition checkpoints",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/v1/replays/{{replayJobId}}/checkpoints"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Replay checkpoints returned', () => pm.response.to.have.status(200));",
+              "const checkpoints = pm.response.json();",
+              "pm.test('Checkpoint collection', () => pm.expect(checkpoints).to.be.an('array'));",
+              "if (checkpoints.length > 0) {",
+              "  pm.test('Immutable bounded offsets are valid', () => checkpoints.forEach(cp => {",
+              "    pm.expect(cp.startOffset).to.be.at.most(cp.nextOffset);",
+              "    pm.expect(cp.nextOffset).to.be.at.most(cp.endOffset);",
+              "  }));",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Retry failed replay (run only for FAILED job)",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/api/v1/replays/{{replayJobId}}/retry"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Failed replay accepted for retry', () => pm.response.to.have.status(202));",
+              "pm.test('Job returned to requested state', () => pm.expect(pm.response.json().status).to.eql('REQUESTED'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Request real replay and aggregate repair",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "repair-{{$guid}}"
+          },
+          {
+            "key": "X-Requested-By",
+            "value": "postman-user"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"fromDate\":\"{{businessDate}}\",\"toDate\":\"{{businessDate}}\",\"dryRun\":false}"
+        },
+        "url": "{{baseUrl}}/api/v1/replays"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Repair replay accepted', () => pm.response.to.have.status(202));"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
