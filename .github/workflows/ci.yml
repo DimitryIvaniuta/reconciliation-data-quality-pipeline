@@ -1,0 +1,35 @@
+name: CI
+on:
+  push: {branches: [main]}
+  pull_request:
+permissions: {contents: read}
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      APP_SECURITY_API_KEY: ci-verification-only
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
+        with: {distribution: temurin, java-version: '25'}
+      - uses: gradle/actions/setup-gradle@v6
+        with: {gradle-version: '9.6.1'}
+      - name: Validate Compose
+        run: docker compose config >/dev/null
+      - name: Verify wrapper bootstrap
+        run: ./gradlew --version
+      - name: Verify
+        run: ./gradlew --no-daemon clean check integrationTest bootJar javadoc
+      - name: Upload verification reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: verification-reports
+          path: |
+            build/reports
+            build/test-results
+            build/libs
