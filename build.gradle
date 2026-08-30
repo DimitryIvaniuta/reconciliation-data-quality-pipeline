@@ -2,7 +2,7 @@ plugins {
     id 'java'
     id 'jacoco'
     id 'checkstyle'
-    id 'org.springframework.boot' version '4.1.0'
+    id 'org.springframework.boot' version '4.1.1'
 }
 
 group = 'com.dxi'
