@@ -34,10 +34,10 @@ dependencies {
     runtimeOnly 'org.postgresql:r2dbc-postgresql'
     runtimeOnly 'org.postgresql:postgresql'
 
-    compileOnly 'org.projectlombok:lombok:1.18.46'
-    annotationProcessor 'org.projectlombok:lombok:1.18.46'
-    testCompileOnly 'org.projectlombok:lombok:1.18.46'
-    testAnnotationProcessor 'org.projectlombok:lombok:1.18.46'
+    compileOnly 'org.projectlombok:lombok:1.18.48'
+    annotationProcessor 'org.projectlombok:lombok:1.18.48'
+    testCompileOnly 'org.projectlombok:lombok:1.18.48'
+    testAnnotationProcessor 'org.projectlombok:lombok:1.18.48'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'io.projectreactor:reactor-test'
